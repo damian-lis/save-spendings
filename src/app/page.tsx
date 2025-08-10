@@ -14,35 +14,33 @@ export default function Home() {
     return Number.isFinite(n) && n > 0;
   })();
 
-  const onSubmit = async (e) => {
-    e?.preventDefault();
-    if (!isValid || status === "loading") return;
-    try {
-      setStatus("loading");
-      setMessage("");
-      const res = await fetch("/api/send-to-sheet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: Number(amount), note: note?.trim() || undefined }),
-      });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      setStatus("success");
-      setMessage("Sent! 🎉");
-      setAmount("");
-      setNote("");
-    } catch (err) {
-      console.error(err);
-      setStatus("error");
-      setMessage(err?.message || "Something went wrong.");
-    } finally {
-      setTimeout(() => setStatus("idle"), 1200);
-    }
-  };
-
   return (
     <div className="min-h-dvh flex items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100 p-6">
       <form
-        onSubmit={onSubmit}
+        onSubmit={async (e) => {
+          e?.preventDefault();
+          if (!isValid || status === "loading") return;
+          try {
+            setStatus("loading");
+            setMessage("");
+            const res = await fetch("/api/send-to-sheet", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ value: Number(amount), note: note?.trim() || undefined }),
+            });
+            if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+            setStatus("success");
+            setMessage("Sent! 🎉");
+            setAmount("");
+            setNote("");
+          } catch (err) {
+            console.error(err);
+            setStatus("error");
+            setMessage((err as { message?: string })?.message || "Something went wrong.");
+          } finally {
+            setTimeout(() => setStatus("idle"), 1200);
+          }
+        }}
         className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/5 p-6 sm:p-8 space-y-6"
       >
         <header className="space-y-1">

@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     });
 
     const text = await gsRes.text();
-    const data: any = text ? JSON.parse(text) : {};
+    const data = text ? JSON.parse(text) : {};
     if (!gsRes.ok || data?.error) {
       return new Response(JSON.stringify({ error: data?.error || `HTTP ${gsRes.status}` }), {
         status: 502,
@@ -29,7 +29,10 @@ export async function POST(req: Request) {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || "Server error" }), { status: 500 });
+  } catch (e) {
+    return new Response(
+      JSON.stringify({ error: (e as { message?: string }).message || "Server error" }),
+      { status: 500 }
+    );
   }
 }
