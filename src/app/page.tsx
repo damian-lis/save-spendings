@@ -1,46 +1,141 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+const STORAGE_KEY = "spend_secret";
+const HEADER_NAME = "X-Shared-Secret";
 
 export default function Home() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [status, setStatus] = useState("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [secret, setSecret] = useState<string | null>(null);
+  const [showSecretDialog, setShowSecretDialog] = useState(false);
+  const [secretInput, setSecretInput] = useState("");
 
-  const isValid = (() => {
+  // Load secret from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setSecret(saved);
+      else setShowSecretDialog(true);
+    } catch {
+      // If localStorage not available (rare), just ask each time
+      setShowSecretDialog(true);
+    }
+  }, []);
+
+  const isValidAmount = (() => {
     if (!amount) return false;
     const n = Number(amount);
     return Number.isFinite(n) && n > 0;
   })();
 
+  async function ensureSecret(): Promise<string | null> {
+    if (secret) return secret;
+    setShowSecretDialog(true);
+    return null;
+  }
+
+  async function submit(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!isValidAmount || status === "loading") return;
+
+    const s = await ensureSecret();
+    if (!s) return;
+
+    console.log({ [HEADER_NAME]: s });
+
+    try {
+      setStatus("loading");
+      setMessage("");
+      const res = await fetch("/api/send-to-sheet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [HEADER_NAME]: s,
+        },
+        body: JSON.stringify({
+          value: Number(amount),
+          note: note?.trim() || undefined,
+        }),
+      });
+
+      if (res.status === 401) {
+        // Secret invalid or expired: clear and reprompt
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {}
+        setSecret(null);
+        setShowSecretDialog(true);
+        throw new Error("Unauthorized: invalid secret.");
+      }
+
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+
+      setStatus("success");
+      setMessage("Sent! 🎉");
+      setAmount("");
+      setNote("");
+    } catch (err) {
+      console.error(err);
+      setStatus("error");
+      setMessage((err as { message?: string })?.message || "Something went wrong.");
+    } finally {
+      setTimeout(() => setStatus("idle"), 1200);
+    }
+  }
+
+  function saveSecretAndClose() {
+    const trimmed = secretInput.trim();
+    if (!trimmed) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, trimmed);
+    } catch {}
+    setSecret(trimmed);
+    setSecretInput("");
+    setShowSecretDialog(false);
+  }
+
   return (
     <div className="min-h-dvh flex items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100 p-6">
+      {/* Secret dialog */}
+      {showSecretDialog && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl ring-1 ring-black/5 p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-slate-900">Enter access key</h2>
+            <p className="text-sm text-slate-600">
+              This protects the form. Your key is stored locally in your browser.
+            </p>
+            <input
+              type="password"
+              autoFocus
+              value={secretInput}
+              onChange={(e) => setSecretInput(e.target.value)}
+              className="mt-1 block w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base text-slate-900 shadow-sm focus:outline-none focus:ring-4 focus:ring-sky-200 focus:border-sky-500"
+              placeholder="••••••••"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowSecretDialog(false)}
+                className="rounded-xl px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 focus:outline-none focus:ring-4 focus:ring-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveSecretAndClose}
+                className="rounded-xl px-4 py-2.5 text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-4 focus:ring-sky-300"
+              >
+                Save key
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form
-        onSubmit={async (e) => {
-          e?.preventDefault();
-          if (!isValid || status === "loading") return;
-          try {
-            setStatus("loading");
-            setMessage("");
-            const res = await fetch("/api/send-to-sheet", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ value: Number(amount), note: note?.trim() || undefined }),
-            });
-            if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-            setStatus("success");
-            setMessage("Sent! 🎉");
-            setAmount("");
-            setNote("");
-          } catch (err) {
-            console.error(err);
-            setStatus("error");
-            setMessage((err as { message?: string })?.message || "Something went wrong.");
-          } finally {
-            setTimeout(() => setStatus("idle"), 1200);
-          }
-        }}
+        onSubmit={submit}
         className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/5 p-6 sm:p-8 space-y-6"
       >
         <header className="space-y-1">
@@ -82,7 +177,7 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={!isValid || status === "loading"}
+            disabled={!isValidAmount || status === "loading"}
             className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-4 py-2.5 text-white font-medium shadow-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-sky-700 focus:outline-none focus:ring-4 focus:ring-sky-300 transition"
           >
             {status === "loading" ? (
